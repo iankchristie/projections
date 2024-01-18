@@ -1,5 +1,5 @@
 let geojson;
-let projectionTypes = [
+const projectionTypes = [
   "Mercator",
   "AzimuthalEqualArea",
   "AzimuthalEquidistant",
@@ -7,21 +7,22 @@ let projectionTypes = [
   "Orthographic",
   "Stereographic",
   "Albers",
+  "AlbersUsa",
   "ConicConformal",
   "ConicEqualArea",
   "ConicEquidistant",
   "Equirectangular",
   "TransverseMercator",
+  "EqualEarth",
+  "NaturalEarth1",
 ];
 
-let projection;
-let geoGenerator = d3.geoPath().projection(projection);
+const dragSensitivity = 75;
+const translateSensitivity = 4;
 
 let graticule = d3.geoGraticule();
 
-const sensitivity = 75;
-
-let circles = [
+const circles = [
   [-135, 0],
   [-90, 0],
   [-45, 0],
@@ -39,12 +40,12 @@ let circles = [
   [180, 35],
   [180, 70],
 ];
-let geoCircle = d3.geoCircle().radius(10).precision(1);
+const geoCircle = d3.geoCircle().radius(10).precision(1);
 
 let state = {
   type: projectionTypes[0],
   scale: 120,
-  translateX: 450,
+  translateX: window.innerWidth / 4,
   translateY: 250,
   centerLon: 0,
   centerLat: 0,
@@ -86,71 +87,27 @@ function update() {
 }
 
 function updateOrthographic() {
-  // Update projection
-  let orthographicProjection = d3["geo" + "Orthographic"]();
-  let orthographicGeoGenerator = d3
-    .geoPath()
-    .projection(orthographicProjection);
-
-  orthographicGeoGenerator.projection(orthographicProjection);
-
-  orthographicProjection
-    .scale(state.scale)
-    .translate([state.translateX, state.translateY])
-    .center([state.centerLon, state.centerLat])
-    .rotate([state.rotateLambda, state.rotatePhi, state.rotateGamma]);
-
   let svg = d3.select("#orthographic");
+  let orthographicProjection = d3["geo" + "Orthographic"]();
 
-  // Update world map
-  let u = svg.select("g.map").selectAll("path").data(geojson.features);
-
-  u.enter().append("path").merge(u).attr("d", orthographicGeoGenerator);
-
-  // Update projection center
-  let projectedCenter = orthographicProjection([
-    state.centerLon,
-    state.centerLat,
-  ]);
-  svg
-    .select(".projection-center")
-    .attr("cx", projectedCenter[0])
-    .attr("cy", projectedCenter[1]);
-
-  // Update graticule
-  svg
-    .select(".graticule path")
-    .datum(graticule())
-    .attr("d", orthographicGeoGenerator);
-
-  // Update circles
-  u = svg
-    .select(".circles")
-    .selectAll("path")
-    .data(
-      circles.map(function (d) {
-        geoCircle.center(d);
-        return geoCircle();
-      })
-    );
-
-  u.enter().append("path").merge(u).attr("d", orthographicGeoGenerator);
+  updateSVG(svg, orthographicProjection);
 }
 
 function updateProjection() {
-  // Update projection
+  let svg = d3.select("#projection");
   let projection = d3["geo" + state.type]();
-  let geoGenerator = d3.geoPath().projection(projection);
 
-  geoGenerator.projection(projection);
+  updateSVG(svg, projection);
+}
+
+function updateSVG(svg, projection) {
+  let geoGenerator = d3.geoPath().projection(projection);
 
   projection
     .scale(state.scale)
     .translate([state.translateX, state.translateY])
     .center([state.centerLon, state.centerLat])
     .rotate([state.rotateLambda, state.rotatePhi, state.rotateGamma]);
-
-  let svg = d3.select("#projection");
 
   // Update world map
   let u = svg.select("g.map").selectAll("path").data(geojson.features);
@@ -181,17 +138,75 @@ function updateProjection() {
   u.enter().append("path").merge(u).attr("d", geoGenerator);
 }
 
-function attachDragListener() {
+function attachListeners() {
   let svg = d3.select("#orthographic");
 
-  svg.call(
-    d3.drag().on("drag", (e) => {
-      const k = sensitivity / state.scale;
-      state.rotateLambda = state.rotateLambda + e.dx * k;
-      state.rotatePhi = state.rotatePhi - e.dy * k;
-      update();
-    })
-  );
+  svg
+    .call(
+      d3.drag().on("drag", (e) => {
+        const k = dragSensitivity / state.scale;
+        state.rotateLambda = state.rotateLambda + e.dx * k;
+        state.rotatePhi = state.rotatePhi - e.dy * k;
+        update();
+      })
+    )
+    .call(
+      d3.zoom().on("zoom", (e) => {
+        const temp = state.scale * e.transform.k;
+        if (temp > 200) {
+          e.transform.k = 200 / state.scale;
+        }
+        if (temp < 20) {
+          e.transform.k = 20 / state.scale;
+        }
+        state.scale = state.scale * e.transform.k;
+        console.log(state.scale);
+        update();
+      })
+    );
+
+  document.onkeydown = checkKey;
+
+  function checkKey(e) {
+    e = e || window.event;
+
+    if (e.shiftKey) {
+      if (e.keyCode == "38") {
+        state.centerLat = state.centerLat + translateSensitivity;
+      }
+      if (e.keyCode == "40") {
+        state.centerLat = state.centerLat - translateSensitivity;
+      }
+      if (e.keyCode == "37") {
+        state.centerLon = state.centerLon - translateSensitivity;
+      }
+      if (e.keyCode == "39") {
+        state.centerLon = state.centerLon + translateSensitivity;
+      }
+    } else if (e.metaKey) {
+      if (e.keyCode == "37") {
+        state.rotateGamma = state.rotateGamma + translateSensitivity;
+      }
+      if (e.keyCode == "39") {
+        state.rotateGamma = state.rotateGamma - translateSensitivity;
+      }
+    } else {
+      if (e.keyCode == "38") {
+        state.translateY = state.translateY - translateSensitivity;
+      }
+      if (e.keyCode == "40") {
+        state.translateY = state.translateY + translateSensitivity;
+      }
+      if (e.keyCode == "37") {
+        state.translateX = state.translateX - translateSensitivity;
+      }
+      if (e.keyCode == "39") {
+        state.translateX = state.translateX + translateSensitivity;
+      }
+    }
+
+    update();
+  }
 }
 
 d3.json(
@@ -200,5 +215,5 @@ d3.json(
   geojson = json;
   initMenu();
   update();
-  attachDragListener();
+  attachListeners();
 });
